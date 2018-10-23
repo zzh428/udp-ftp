@@ -10,7 +10,7 @@ try:
   while True:
     data, address = sock.recvfrom(size)
     print(str(data,encoding='utf-8'))
-    sock.sendto(bytes(count) +bytes(' ',encoding='utf-8') + data, address)
+    sock.sendto(bytes(str(count),encoding='utf-8') +bytes(' ',encoding='utf-8') + data, address)
     count += 1
 finally:
   sock.close()
