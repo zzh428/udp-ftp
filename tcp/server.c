@@ -1,6 +1,7 @@
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <net/if.h> 
 #include <sys/ioctl.h>
@@ -13,6 +14,8 @@
 #include <memory.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <dirent.h>
+#include <ifaddrs.h>
 
 #define MODE_PORT 0
 #define MODE_PASV 1
@@ -45,6 +48,7 @@ char * str_chdirFail = "550 Chdir failed\r\n";
 char * str_renameFail = "550 Rename failed\r\n";
 char * str_noconnection = "425 No connection\r\n";
 char * str_nocmd = "502 No such command\r\n";
+char * str_nornfr = "503 No RNFR command\r\n";
 
 char * localIP; //for PASV mode
 
@@ -72,7 +76,7 @@ int handleArgs(int * port, char * path, int argc, char **argv)
 					return 0;
 				}
 			}
-			if(!strcmp(argv[1],"-path"))
+			if(!strcmp(argv[1],"-root"))
 			{
 				strcpy(path,argv[2]);
 				return 1;
@@ -81,7 +85,7 @@ int handleArgs(int * port, char * path, int argc, char **argv)
 			return 0;
 			break;
 		case 5:
-			if(!strcmp(argv[1],"-port") && !strcmp(argv[3],"-path"))
+			if(!strcmp(argv[1],"-port") && !strcmp(argv[3],"-root"))
 			{
 				int temp = atoi(argv[2]);
 				if (temp >0 && temp < 65536)
@@ -96,7 +100,7 @@ int handleArgs(int * port, char * path, int argc, char **argv)
 					return 0;
 				}
 			}
-			if(!strcmp(argv[3],"-port") && !strcmp(argv[1],"-path"))
+			if(!strcmp(argv[3],"-port") && !strcmp(argv[1],"-root"))
 			{
 				int temp = atoi(argv[4]);
 				if (temp > 0 && temp < 65536)
@@ -125,14 +129,20 @@ int handleArgs(int * port, char * path, int argc, char **argv)
 int sendStringtoClient(int connfd, char * sentence)
 {
 	int len = strlen(sentence);
-	p = 0;
+	printf("%s",sentence);
+	int p = 0;
 	while (p < len) {
-		int n = write(connfd, sentence + p, len + 1 - p);
+		int n = write(connfd, sentence + p, len - p);
 		if (n < 0) {
 			printf("Error write(): %s(%d)\n", strerror(errno), errno);
 			close(connfd);
 			return 0;
-		} else {
+		} 
+		else if(n == 0)
+		{
+			break;
+		}
+		else {
 			p += n;
 		}			
 	}
@@ -141,7 +151,7 @@ int sendStringtoClient(int connfd, char * sentence)
 
 int receiveStringfromClient(int connfd, char * sentence)
 {
-	p = 0;
+	int p = 0;
 	while (1) {
 		int n = read(connfd, sentence + p, 8191 - p);
 		if (n < 0) {
@@ -158,7 +168,7 @@ int receiveStringfromClient(int connfd, char * sentence)
 		}
 	}
 	//socket接收到的字符串并不会添加'\0'
-	sentence[p - 1] = '\0';
+	sentence[p - 2] = '\0';
 	return 1;
 }
 
@@ -185,14 +195,19 @@ int initSocket(int port)
 		printf("Error socket(): %s(%d)\n", strerror(errno), errno);
 		return -1;
 	}
-
+	
+	int opt = SO_REUSEADDR;   
+    setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+	
 	//设置本机的ip和port
+	struct sockaddr_in addr;
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(port);
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);	//监听"0.0.0.0"
 
-												//将本机的ip和port与socket绑定
+						
+
 	if (bind(listenfd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
 		printf("Error bind(): %s(%d)\n", strerror(errno), errno);
 		return -1;
@@ -289,15 +304,27 @@ int parseIP(char * args, char * IP, int * port)
 
 char * getLocalIP()
 {
-	int fd;
-	struct sockaddr_in addr;
-	struct ifreq ifr;
-	fd = socket(AF_INET, SOCK_DGRAM, 0);
-	strncpy(ifr.ifr_name, "eth0", IFNAMSIZ);
-	if (ioctl(sockfd, SIOCGIFADDR, &ifr) == 0) {
-		memcpy(&addr, &ifr.ifr_addr, sizeof(ifr.ifr_addr));
-		return inet_ntoa(addr.sin_addr);
-	}
+	//reference: https://stackoverflow.com/questions/212528/get-the-ip-address-of-the-machine
+	struct ifaddrs * ifAddrStruct = NULL;
+    struct ifaddrs * ifa=NULL;
+    void * tmpAddrPtr = NULL;
+	char * addressBuffer = (char *)malloc(INET_ADDRSTRLEN);
+    getifaddrs(&ifAddrStruct);
+
+    for (ifa = ifAddrStruct; ifa != NULL; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_addr) {
+            continue;
+        }
+		if (ifa->ifa_addr->sa_family==AF_INET)
+        {
+			tmpAddrPtr=&((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+        	inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
+			if(strcmp(addressBuffer,"127.0.0.1") != 0)
+				break;
+		} 
+    }
+    if (ifAddrStruct!=NULL) freeifaddrs(ifAddrStruct);
+	return addressBuffer;
 }
 
 void generatePASVMessage(char * message, int port)
@@ -313,13 +340,16 @@ void generatePASVMessage(char * message, int port)
 	strcat(message, tempLocalIP);
 	strcat(message, ",");
 	char temp[10];
-	itoa(port / 256, temp, 10);
+	sprintf(temp,"%d",port/256);
+	//itoa(port / 256, temp, 10);
 	strcat(message, temp);
 	strcat(message, ",");
 	memset(temp, 0, 10);
-	itoa(port % 256, temp, 10);
+	sprintf(temp,"%d",port%256);
+	//itoa(port % 256, temp, 10);
 	strcat(message, temp);
 	strcat(message, ")\r\n");
+	printf("%s",message);
 }
 
 void getFullPath(char * root, char * cwd, char * args, char * result)
@@ -341,7 +371,7 @@ void getDirList(char * buf)
 {
 	char path[1000];
 	memset(path, 0, 1000);
-	path = getcwd(NULL, NULL);
+	getcwd(path, 255);
 	DIR *dir = opendir(path);
 	struct dirent *dirptr;
 	while ((dirptr = readdir(dir)) != NULL)
@@ -374,6 +404,7 @@ int startClientSession(int connfd, char * rootPath)
 		receiveStringfromClient(connfd, str);
 		char cmd[10],args[8192];
 		parseCmd(str,cmd,args);
+		printf("%s,%s\n",cmd,args);
 		if(!strcmp(cmd,"USER"))
 		{
 			if(status == STATUS_NOUSERNAME || status == STATUS_NOPASSWORD)
@@ -397,10 +428,10 @@ int startClientSession(int connfd, char * rootPath)
 		{
 			if(status == STATUS_NOPASSWORD)
 			{
-				if (args[0] != 0)
+				if (1)
 				{
 					sendStringtoClient(connfd, str_login);
-					status = 2;
+					status = STATUS_NOPORT;
 				}
 				else
 					sendStringtoClient(connfd, str_nopassword);
@@ -453,7 +484,7 @@ int startClientSession(int connfd, char * rootPath)
 			}
 			else
 			{
-				sendStringtoClient(connfd,str_permission)
+				sendStringtoClient(connfd,str_permission);
 			}
 		}
 		else if(!strcmp(cmd,"STOR"))
@@ -542,21 +573,24 @@ int startClientSession(int connfd, char * rootPath)
 		}
 		else if(!strcmp(cmd,"PASV"))
 		{
+			printf("ppppppp\n");
 			if (status >= STATUS_NOPORT)
 			{
-				if(pasv_listenfd != 0)
+				if(mode == MODE_PASV)
 					close(pasv_listenfd);
 				mode = MODE_PASV;
 				while (1)
 				{
 					dataport = rand() % (65535 - 1 + 20000) + 20000;
-					if ((pasv_listenfd = initSocket(dataport) == -1)
+					printf("%d\n",dataport);
+					if ((pasv_listenfd = initSocket(dataport)) == -1)
 						continue;
 					break;
 				}
 				char message[200];
 				memset(message, 0, 200);
 				generatePASVMessage(message, dataport);
+				printf("%s\n",message);
 				sendStringtoClient(connfd, message);
 				status = STATUS_READY;
 			}
@@ -591,18 +625,19 @@ int startClientSession(int connfd, char * rootPath)
 			if (status >= STATUS_NOPORT)
 			{
 				char path[1000];
+				char * p = path;
 				memset(path, 0, 1000);
 				getFullPath(rootPath, curPath, args, path);
 				if (chdir(path) == 0)
 				{
-					path = getcwd(NULL, NULL);
+					getcwd(path, 255);
 					if (strncmp(path, rootPath, strlen(rootPath)) == 0)
 					{
-						path += strlen(rootPath);
-						if (*path == 0)
-							*path == '/';
+						p += strlen(rootPath);
+						if (*p == 0)
+							*p = '/';
 						memset(curPath, 0, 1000);
-						strcpy(curPath, path);
+						strcpy(curPath, p);
 						sendStringtoClient(connfd, str_dirok);
 					}
 					else
@@ -618,11 +653,12 @@ int startClientSession(int connfd, char * rootPath)
 				{
 					sendStringtoClient(connfd, str_chdirFail);
 				}
-				else
-				{
-					sendStringtoClient(connfd, str_permission);
-				}
 			}
+			else
+			{
+				sendStringtoClient(connfd, str_permission);
+			}
+			
 		}
 		else if(!strcmp(cmd,"PWD"))
 		{
@@ -644,10 +680,11 @@ int startClientSession(int connfd, char * rootPath)
 		{
 			if (status == STATUS_READY)
 			{
+				int file_fd = 0;
 				char message[1000];
 				memset(message, 0, 1000);
 				strcpy(message, str_open);
-				strcat(message, "list of current dircttory\r\n");
+				strcat(message, "list of current directory\r\n");
 				sendStringtoClient(connfd, message);
 				char buf[100000];
 				memset(buf, 0, 100000);
@@ -656,7 +693,7 @@ int startClientSession(int connfd, char * rootPath)
 				{
 					file_fd = connectUser(client_IP, dataport);
 					int len = strlen(buf);
-					p = 0;
+					int p = 0;
 					while (p < len) {
 						int n = write(file_fd, buf + p, len + 1 - p);
 						if (n < 0) {
@@ -673,7 +710,7 @@ int startClientSession(int connfd, char * rootPath)
 				{
 					file_fd = accept(pasv_listenfd, NULL, NULL);
 					int len = strlen(buf);
-					p = 0;
+					int p = 0;
 					while (p < len) {
 						int n = write(file_fd, buf + p, len + 1 - p);
 						if (n < 0) {
@@ -745,17 +782,24 @@ int startClientSession(int connfd, char * rootPath)
 		{
 			if (status >= STATUS_NOPORT)
 			{
-				char path[1000];
-				memset(path, 0, 1000);
-				getFullPath(rootPath, curPath, args, path);
-				if (rename(rnfr_path, path) == 0)
+				if(rnfr_status)
 				{
-					rnfr_status = 0;
-					sendStringtoClient(connfd, str_dirok);
+					char path[1000];
+					memset(path, 0, 1000);
+					getFullPath(rootPath, curPath, args, path);
+					if (rename(rnfr_path, path) == 0)
+					{
+						rnfr_status = 0;
+						sendStringtoClient(connfd, str_dirok);
+					}
+					else
+					{
+						sendStringtoClient(connfd, str_fileFail);
+					}
 				}
 				else
 				{
-					sendStringtoClient(connfd, str_fileFail);
+					sendStringtoClient(connfd, str_nornfr);
 				}
 			}
 			else
@@ -772,21 +816,16 @@ int startClientSession(int connfd, char * rootPath)
 
 int main(int argc, char **argv) {
 	int listenfd, connfd;		//监听socket和连接socket不一样，后者用于数据传输
-	struct sockaddr_in addr;
-	char sentence[8192];
-	int p;
-	int len;
 	int port = 21;
 	char path[500] = "/tmp";
-
-	if(chdir(path) != 0)
-		return 1;
-	path = getcwd(NULL, NULL);
 	localIP = getLocalIP();
 
 	if(!handleArgs(&port, path, argc, argv))
 		return 1;
-
+	if(chdir(path) != 0)
+		return 1;
+	getcwd(path, 255);
+	
 	if ((listenfd = initSocket(port)) == -1)
 	{
 		return 1;
@@ -814,35 +853,9 @@ int main(int argc, char **argv) {
 				close(connfd);
 				return 0;
 			}
-		
-
+			close(connfd);
 		}
 		
-		//榨干socket传来的内容
-		p = 0;
-		while (1) {
-			int n = read(connfd, sentence + p, 8191 - p);
-			if (n < 0) {
-				printf("Error read(): %s(%d)\n", strerror(errno), errno);
-				close(connfd);
-				continue;
-			} else if (n == 0) {
-				break;
-			} else {
-				p += n;
-				if (sentence[p - 1] == '\n') {
-					break;
-				}
-			}
-		}
-		//socket接收到的字符串并不会添加'\0'
-		sentence[p - 1] = '\0';
-		len = p - 1;
-		
-
-		//发送字符串到socket
- 		
-		close(connfd);
 	}
 	close(listenfd);
 	return 0;
