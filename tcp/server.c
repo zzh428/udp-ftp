@@ -1,58 +1,10 @@
-#include <sys/socket.h>
-#include <sys/select.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <net/if.h> 
-#include <sys/ioctl.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <errno.h>
-#include <ctype.h>
-#include <string.h>
-#include <memory.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <dirent.h>
-#include <ifaddrs.h>
-
-#define MODE_PORT 0
-#define MODE_PASV 1
-#define STATUS_NOUSERNAME 0
-#define STATUS_NOPASSWORD 1
-#define STATUS_NOPORT 2
-#define STATUS_READY 3
-
-char * str_welcome = "220 FTP server ready\r\n";
-char * str_wronguser = "530 Invalid username\r\n";
-char * str_nopassword = "530 No password\r\n";
-char * str_nouser = "503 Need username before password\r\n";
-char * str_password = "331 Guest login ok, send your complete e-mail address as password\r\n";
-char * str_login = "230 Guest login ok\r\n";
-char * str_syst = "215 UNIX Type: L8\r\n";
-char * str_type = "200 Type set to I.\r\n";
-char * str_typeerror = "501 Type error\r\n";
-char * str_port = "200 PORT command successful\r\n";
-char * str_open = "150 Opening BINARY mode data connection for ";
-char * str_fileFail = "451 File operation failed\r\n";
-char * str_noFile = "451 No such file or directory\r\n";
-char * str_finish = "226 Transfer complete\r\n";
-char * str_pasv = "227 Entering Passive Mode (";
-char * str_goodbye = "221 Goodbye\r\n";
-char * str_permission = "550 Permission denied\r\n";
-char * str_dirok = "250 Okey\r\n";
-char * str_mkdirFail = "550 Mkdir failed\r\n";
-char * str_rmdirFail = "550 Rmdir failed\r\n";
-char * str_chdirFail = "550 Chdir failed\r\n";
-char * str_renameFail = "550 Rename failed\r\n";
-char * str_noconnection = "425 No connection\r\n";
-char * str_nocmd = "502 No such command\r\n";
-char * str_nornfr = "503 No RNFR command\r\n";
+#include "inc.h"
+#include "const.h"
 
 char * localIP; //for PASV mode
-
-
+int listenfd, connfd;		//监听socket和连接socket不一样，后者用于数据传输
+int port = 21;
+char rootPath[500] = "/tmp";
 
 int handleArgs(int * port, char * path, int argc, char **argv)
 {
@@ -387,7 +339,7 @@ void getDirList(char * buf)
 	strcat(buf, "\r\n");
 }
 
-int startClientSession(int connfd, char * rootPath)
+int startClientSession()
 {
 	char curPath[1000] = "/";
 	sendStringtoClient(connfd, str_welcome);
@@ -428,7 +380,7 @@ int startClientSession(int connfd, char * rootPath)
 		{
 			if(status == STATUS_NOPASSWORD)
 			{
-				if (1)
+				if (args[0] != 0)
 				{
 					sendStringtoClient(connfd, str_login);
 					status = STATUS_NOPORT;
@@ -573,7 +525,6 @@ int startClientSession(int connfd, char * rootPath)
 		}
 		else if(!strcmp(cmd,"PASV"))
 		{
-			printf("ppppppp\n");
 			if (status >= STATUS_NOPORT)
 			{
 				if(mode == MODE_PASV)
@@ -582,7 +533,6 @@ int startClientSession(int connfd, char * rootPath)
 				while (1)
 				{
 					dataport = rand() % (65535 - 1 + 20000) + 20000;
-					printf("%d\n",dataport);
 					if ((pasv_listenfd = initSocket(dataport)) == -1)
 						continue;
 					break;
@@ -590,7 +540,6 @@ int startClientSession(int connfd, char * rootPath)
 				char message[200];
 				memset(message, 0, 200);
 				generatePASVMessage(message, dataport);
-				printf("%s\n",message);
 				sendStringtoClient(connfd, message);
 				status = STATUS_READY;
 			}
@@ -815,16 +764,13 @@ int startClientSession(int connfd, char * rootPath)
 }
 
 int main(int argc, char **argv) {
-	int listenfd, connfd;		//监听socket和连接socket不一样，后者用于数据传输
-	int port = 21;
-	char path[500] = "/tmp";
 	localIP = getLocalIP();
 
-	if(!handleArgs(&port, path, argc, argv))
+	if(!handleArgs(&port, rootPath, argc, argv))
 		return 1;
-	if(chdir(path) != 0)
+	if(chdir(rootPath) != 0)
 		return 1;
-	getcwd(path, 255);
+	getcwd(rootPath, 255);
 	
 	if ((listenfd = initSocket(port)) == -1)
 	{
@@ -841,17 +787,12 @@ int main(int argc, char **argv) {
 		else
 		{
 			int pid = fork();
-			if(pid < 0)
-			{
-				printf("fork failed");
-				return -1;
-			}	
 			if(pid == 0)
 			{
 				close(listenfd);
-				startClientSession(connfd, path);
+				startClientSession();
 				close(connfd);
-				return 0;
+				exit(0);
 			}
 			close(connfd);
 		}
