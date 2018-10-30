@@ -19,5 +19,6 @@
 #include <stdlib.h>
 #include <dirent.h>
 #include <ifaddrs.h>
+#include <regex.h>
 
 #endif

@@ -1,11 +1,6 @@
 #include "inc.h"
 #include "const.h"
 
-char * localIP; //for PASV mode
-int listenfd, connfd;		//监听socket和连接socket不一样，后者用于数据传输
-int port = 21;
-char rootPath[500] = "/tmp";
-
 int handleArgs(int * port, char * path, int argc, char **argv)
 {
 	switch(argc)
@@ -81,7 +76,6 @@ int handleArgs(int * port, char * path, int argc, char **argv)
 int sendStringtoClient(int connfd, char * sentence)
 {
 	int len = strlen(sentence);
-	printf("%s",sentence);
 	int p = 0;
 	while (p < len) {
 		int n = write(connfd, sentence + p, len - p);
@@ -148,18 +142,13 @@ int initSocket(int port)
 		return -1;
 	}
 	
-	int opt = SO_REUSEADDR;   
-    setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-	
 	//设置本机的ip和port
 	struct sockaddr_in addr;
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(port);
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);	//监听"0.0.0.0"
-
-						
-
+			
 	if (bind(listenfd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
 		printf("Error bind(): %s(%d)\n", strerror(errno), errno);
 		return -1;
@@ -217,8 +206,14 @@ int recvFile(int fd, char * args)
 	int len = 0;
 	while(1)
 	{
-		if ((len = read(fd, buf, 8192)) <= 0)
+		len = read(fd, buf, 8192);
+		if (len == 0)
 			break;
+		else if (len < 0)
+		{
+			fclose(f);
+			return 0;
+		}
 		fwrite(buf, sizeof(char), len, f);
 	}
 	fclose(f);
@@ -279,7 +274,7 @@ char * getLocalIP()
 	return addressBuffer;
 }
 
-void generatePASVMessage(char * message, int port)
+void generatePASVMessage(char * message, int port, char * localIP)
 {
 	strcpy(message, str_pasv);
 	char tempLocalIP[20];
@@ -301,7 +296,6 @@ void generatePASVMessage(char * message, int port)
 	//itoa(port % 256, temp, 10);
 	strcat(message, temp);
 	strcat(message, ")\r\n");
-	printf("%s",message);
 }
 
 void getFullPath(char * root, char * cwd, char * args, char * result)
@@ -319,27 +313,36 @@ void getFullPath(char * root, char * cwd, char * args, char * result)
 	}
 }
 
-void getDirList(char * buf)
+int sendDirList(int fd)
 {
-	char path[1000];
-	memset(path, 0, 1000);
-	getcwd(path, 255);
-	DIR *dir = opendir(path);
-	struct dirent *dirptr;
-	while ((dirptr = readdir(dir)) != NULL)
+	FILE * f = popen("ls -l", "r");
+	if (f == NULL)
+		return 0;
+	char buf[8192];
+	int len = 0;
+	while (fgets(buf, sizeof(buf), f) != NULL)
 	{
-		strcat(buf, dirptr->d_name);
-		if (dirptr->d_type == DT_DIR)
-			strcat(buf, " DIR\n");
-		else if(dirptr->d_type == DT_REG)
-			strcat(buf, " FILE\n");
-		else
-			strcat(buf, " OTHER\n");
+		len = strlen(buf);
+		write(fd, buf, len);
 	}
-	strcat(buf, "\r\n");
+	pclose(f);
+	return 1;
 }
 
-int startClientSession()
+int checkPath(char * path)
+{
+    char *pattern = "\\.\\.";
+    regex_t reg;
+    regmatch_t pmatch[1];
+	regcomp(&reg,pattern,REG_EXTENDED);
+    int t = regexec(&reg,path,1,pmatch,0);
+    if(t == REG_NOMATCH){
+		return 1;
+	}
+	return 0;
+}
+
+int startClientSession(char *localIP, int connfd, char * rootPath)
 {
 	char curPath[1000] = "/";
 	sendStringtoClient(connfd, str_welcome);
@@ -353,10 +356,13 @@ int startClientSession()
 	while(1)
 	{
 		char str[8192];
-		receiveStringfromClient(connfd, str);
+		memset(str,0,8192);
+		if(receiveStringfromClient(connfd, str) == 0)
+			return 0;
 		char cmd[10],args[8192];
+		memset(cmd,0,10);
+		memset(args,0,8192);
 		parseCmd(str,cmd,args);
-		printf("%s,%s\n",cmd,args);
 		if(!strcmp(cmd,"USER"))
 		{
 			if(status == STATUS_NOUSERNAME || status == STATUS_NOPASSWORD)
@@ -405,30 +411,37 @@ int startClientSession()
 			getFullPath(rootPath, curPath, args, path);
 			if (status == STATUS_READY)
 			{
-				char message[1000];
-				memset(message, 0, 1000);
-				strcpy(message, str_open);
-				strcat(message, args);
-				strcat(message, "\r\n");
-				sendStringtoClient(connfd, message);
-				if (mode == MODE_PORT)
+				if(checkPath(args))
 				{
-					file_fd = connectUser(client_IP, dataport);
-					if(sendFile(file_fd, path))
-						sendStringtoClient(connfd, str_finish);
-					else
-						sendStringtoClient(connfd, str_fileFail);
+					char message[1000];
+					memset(message, 0, 1000);
+					strcpy(message, str_open);
+					strcat(message, args);
+					strcat(message, "\r\n");
+					sendStringtoClient(connfd, message);
+					if (mode == MODE_PORT)
+					{
+						file_fd = connectUser(client_IP, dataport);
+						if(sendFile(file_fd, path))
+							sendStringtoClient(connfd, str_finish);
+						else
+							sendStringtoClient(connfd, str_fileFail);
 
+					}
+					else
+					{
+						file_fd = accept(pasv_listenfd, NULL, NULL);
+						if (sendFile(file_fd, path))
+							sendStringtoClient(connfd, str_finish);
+						else
+							sendStringtoClient(connfd, str_fileFail);
+					}
+					close(file_fd);
 				}
 				else
 				{
-					file_fd = accept(pasv_listenfd, NULL, NULL);
-					if (sendFile(file_fd, path))
-						sendStringtoClient(connfd, str_finish);
-					else
-						sendStringtoClient(connfd, str_fileFail);
+					sendStringtoClient(connfd,str_permission_path);
 				}
-				close(file_fd);
 			}
 			else if (status == STATUS_NOPORT)
 			{
@@ -437,7 +450,7 @@ int startClientSession()
 			else
 			{
 				sendStringtoClient(connfd,str_permission);
-			}
+			}	
 		}
 		else if(!strcmp(cmd,"STOR"))
 		{
@@ -447,29 +460,36 @@ int startClientSession()
 			getFullPath(rootPath, curPath, args, path);
 			if (status == STATUS_READY)
 			{
-				char message[1000];
-				memset(message, 0, 1000);
-				strcpy(message, str_open);
-				strcat(message, args);
-				strcat(message, "\r\n");
-				sendStringtoClient(connfd, message);
-				if (mode == MODE_PORT)
+				if(checkPath(args))
 				{
-					file_fd = connectUser(client_IP, dataport);
-					if (recvFile(file_fd, path))
-						sendStringtoClient(connfd, str_finish);
+					char message[1000];
+					memset(message, 0, 1000);
+					strcpy(message, str_open);
+					strcat(message, args);
+					strcat(message, "\r\n");
+					sendStringtoClient(connfd, message);
+					if (mode == MODE_PORT)
+					{
+						file_fd = connectUser(client_IP, dataport);
+						if (recvFile(file_fd, path))
+							sendStringtoClient(connfd, str_finish);
+						else
+							sendStringtoClient(connfd, str_fileFail);
+					}
 					else
-						sendStringtoClient(connfd, str_fileFail);
+					{
+						file_fd = accept(pasv_listenfd, NULL, NULL);
+						if (recvFile(file_fd, path))
+							sendStringtoClient(connfd, str_finish);
+						else
+							sendStringtoClient(connfd, str_fileFail);
+					}
+					close(file_fd);
 				}
 				else
 				{
-					file_fd = accept(pasv_listenfd, NULL, NULL);
-					if (recvFile(file_fd, path))
-						sendStringtoClient(connfd, str_finish);
-					else
-						sendStringtoClient(connfd, str_fileFail);
+					sendStringtoClient(connfd,str_permission_path);
 				}
-				close(file_fd);
 			}
 			else if (status == STATUS_NOPORT)
 			{
@@ -539,7 +559,7 @@ int startClientSession()
 				}
 				char message[200];
 				memset(message, 0, 200);
-				generatePASVMessage(message, dataport);
+				generatePASVMessage(message, dataport, localIP);
 				sendStringtoClient(connfd, message);
 				status = STATUS_READY;
 			}
@@ -554,20 +574,28 @@ int startClientSession()
 			{
 				char path[1000];
 				memset(path, 0, 1000);
-				getFullPath(rootPath, curPath, args, path);
-				if(mkdir(path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == 0)
+				if(checkPath(args))
 				{
-					sendStringtoClient(connfd, str_dirok);
+					getFullPath(rootPath, curPath, args, path);
+					if(mkdir(path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == 0)
+					{
+						sendStringtoClient(connfd, str_dirok);
+					}
+					else
+					{
+						sendStringtoClient(connfd, str_mkdirFail);
+					}
 				}
 				else
 				{
-					sendStringtoClient(connfd, str_mkdirFail);
+					sendStringtoClient(connfd,str_permission_path);
 				}
 			}
 			else
 			{
 				sendStringtoClient(connfd, str_permission);
 			}
+
 		}
 		else if(!strcmp(cmd,"CWD"))
 		{
@@ -635,42 +663,22 @@ int startClientSession()
 				strcpy(message, str_open);
 				strcat(message, "list of current directory\r\n");
 				sendStringtoClient(connfd, message);
-				char buf[100000];
-				memset(buf, 0, 100000);
-				getDirList(buf);
 				if (mode == MODE_PORT)
 				{
 					file_fd = connectUser(client_IP, dataport);
-					int len = strlen(buf);
-					int p = 0;
-					while (p < len) {
-						int n = write(file_fd, buf + p, len + 1 - p);
-						if (n < 0) {
-							sendStringtoClient(connfd, str_fileFail);
-							close(file_fd);
-						}
-						else {
-							p += n;
-						}
-					}
-					sendStringtoClient(connfd, str_finish);
+					if(sendDirList(file_fd))
+						sendStringtoClient(connfd, str_finish);
+					else
+						sendStringtoClient(connfd, str_fileFail);
+
 				}
 				else
 				{
 					file_fd = accept(pasv_listenfd, NULL, NULL);
-					int len = strlen(buf);
-					int p = 0;
-					while (p < len) {
-						int n = write(file_fd, buf + p, len + 1 - p);
-						if (n < 0) {
-							sendStringtoClient(connfd, str_fileFail);
-							close(file_fd);
-						}
-						else {
-							p += n;
-						}
-					}
-					sendStringtoClient(connfd, str_finish);
+					if (sendDirList(file_fd))
+						sendStringtoClient(connfd, str_finish);
+					else
+						sendStringtoClient(connfd, str_fileFail);
 				}
 				close(file_fd);
 			}
@@ -689,14 +697,21 @@ int startClientSession()
 			{
 				char path[1000];
 				memset(path, 0, 1000);
-				getFullPath(rootPath, curPath, args, path);
-				if (rmdir(path) == 0)
+				if(checkPath(args))
 				{
-					sendStringtoClient(connfd, str_dirok);
+					getFullPath(rootPath, curPath, args, path);
+					if (rmdir(path) == 0)
+					{
+						sendStringtoClient(connfd, str_dirok);
+					}
+					else
+					{
+						sendStringtoClient(connfd, str_permission);
+					}
 				}
 				else
 				{
-					sendStringtoClient(connfd, str_permission);
+					sendStringtoClient(connfd, str_permission_path);
 				}
 			}
 			else
@@ -710,16 +725,23 @@ int startClientSession()
 			{
 				char path[1000];
 				memset(path, 0, 1000);
-				getFullPath(rootPath, curPath, args, path);
-				if (access(path, F_OK) == 0)
+				if(checkPath(args))
 				{
-					strcpy(rnfr_path, path);
-					sendStringtoClient(connfd, str_dirok);
-					rnfr_status = 1;
+					getFullPath(rootPath, curPath, args, path);
+					if (access(path, F_OK) == 0)
+					{
+						strcpy(rnfr_path, path);
+						sendStringtoClient(connfd, str_dirok);
+						rnfr_status = 1;
+					}
+					else
+					{
+						sendStringtoClient(connfd, str_noFile);
+					}
 				}
 				else
 				{
-					sendStringtoClient(connfd, str_noFile);
+					sendStringtoClient(connfd, str_permission_path);
 				}
 			}
 			else
@@ -735,15 +757,22 @@ int startClientSession()
 				{
 					char path[1000];
 					memset(path, 0, 1000);
-					getFullPath(rootPath, curPath, args, path);
-					if (rename(rnfr_path, path) == 0)
+					if(checkPath(args))
 					{
-						rnfr_status = 0;
-						sendStringtoClient(connfd, str_dirok);
+						getFullPath(rootPath, curPath, args, path);
+						if (rename(rnfr_path, path) == 0)
+						{
+							rnfr_status = 0;
+							sendStringtoClient(connfd, str_dirok);
+						}
+						else
+						{
+							sendStringtoClient(connfd, str_fileFail);
+						}
 					}
 					else
 					{
-						sendStringtoClient(connfd, str_fileFail);
+						sendStringtoClient(connfd, str_permission_path);
 					}
 				}
 				else
@@ -764,6 +793,10 @@ int startClientSession()
 }
 
 int main(int argc, char **argv) {
+	char * localIP; //for PASV mode
+	int listenfd, connfd;		//监听socket和连接socket不一样，后者用于数据传输
+	int port = 21;
+	char rootPath[500] = "/tmp";
 	localIP = getLocalIP();
 
 	if(!handleArgs(&port, rootPath, argc, argv))
@@ -790,7 +823,7 @@ int main(int argc, char **argv) {
 			if(pid == 0)
 			{
 				close(listenfd);
-				startClientSession();
+				startClientSession(localIP,connfd,rootPath);
 				close(connfd);
 				exit(0);
 			}
@@ -799,6 +832,7 @@ int main(int argc, char **argv) {
 		
 	}
 	close(listenfd);
+	free(localIP);
 	return 0;
 }
 
