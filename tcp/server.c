@@ -309,6 +309,8 @@ int getFullPath(char * root, char * cwd, char * args, char * result)
 	{
 		strcpy(result, root);
 		strcat(result, cwd);
+		if(cwd[strlen(cwd)-1] != '/')
+			strcat(result, "/");
 		strcat(result, args);
 	}
 	char checktemp[1000];
@@ -320,12 +322,11 @@ int getFullPath(char * root, char * cwd, char * args, char * result)
 			strcpy(result,checktemp);
 			return 1;
 		}
-			
 		else
 			return 0;
 	}
 	else
-		return 0;
+		return -1;
 }
 
 int sendDirList(int fd, char * args)
@@ -435,7 +436,8 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 			memset(path, 0, 1000);
 			if (status == STATUS_READY)
 			{
-				if(getFullPath(rootPath, curPath, args, path))
+				int p = getFullPath(rootPath, curPath, args, path);
+				if(p == 1)
 				{
 					char message[1000];
 					memset(message, 0, 1000);
@@ -462,9 +464,13 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 					}
 					close(file_fd);
 				}
-				else
+				else if(p == 0)
 				{
 					sendStringtoClient(connfd,str_permission);
+				}
+				else
+				{
+					sendStringtoClient(connfd,str_noFile);
 				}
 			}
 			else if (status == STATUS_NOPORT)
@@ -483,7 +489,7 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 			memset(path, 0, 1000);
 			if (status == STATUS_READY)
 			{
-				if(getFullPath(rootPath, curPath, args, path))
+				if(getFullPath(rootPath, curPath, args, path) != 0)
 				{
 					char message[1000];
 					memset(message, 0, 1000);
@@ -597,7 +603,7 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 			{
 				char path[1000];
 				memset(path, 0, 1000);
-				if(getFullPath(rootPath, curPath, args, path))
+				if(getFullPath(rootPath, curPath, args, path) != 0)
 				{
 					
 					if(mkdir(path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == 0)
@@ -611,7 +617,7 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 				}
 				else
 				{
-					sendStringtoClient(connfd,str_permission_path);
+					sendStringtoClient(connfd,str_permission);
 				}
 			}
 			else
@@ -625,20 +631,21 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 			if (status >= STATUS_NOPORT)
 			{
 				char path[1000];
-				char * p = path;
+				char * pp = path;
 				memset(path, 0, 1000);
-				if(getFullPath(rootPath, curPath, args, path))
+				int p = getFullPath(rootPath, curPath, args, path);
+				if(p == 1)
 				{
 					if (chdir(path) == 0)
 					{
 						getcwd(path, 255);
 						if (strncmp(path, rootPath, strlen(rootPath)) == 0)
 						{
-							p += strlen(rootPath);
-							if (*p == 0)
-								*p = '/';
+							pp += strlen(rootPath);
+							if (*pp == 0)
+								*pp = '/';
 							memset(curPath, 0, 1000);
-							strcpy(curPath, p);
+							strcpy(curPath, pp);
 							sendStringtoClient(connfd, str_dirok);
 						}
 						else
@@ -655,9 +662,13 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 						sendStringtoClient(connfd, str_chdirFail);
 					}
 				}
-				else
+				else if(p == 0)
 				{
 					sendStringtoClient(connfd, str_permission);
+				}
+				else
+				{
+					sendStringtoClient(connfd, str_noFile);
 				}
 			}
 			else
@@ -688,7 +699,8 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 			{
 				char path[1000];
 				memset(path, 0, 1000);
-				if(getFullPath(rootPath, curPath, args, path))
+				int p = getFullPath(rootPath, curPath, args, path);
+				if(p == 1)
 				{
 					int file_fd = 0;
 					char message[1000];
@@ -714,9 +726,13 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 					}
 					close(file_fd);
 				}
-				else
+				else if(p == 0)
 				{
 					sendStringtoClient(connfd, str_permission);
+				}
+				else
+				{
+					sendStringtoClient(connfd, str_noFile);
 				}
 			}
 			else if (status == STATUS_NOPORT)
@@ -734,7 +750,8 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 			{
 				char path[1000];
 				memset(path, 0, 1000);
-				if(getFullPath(rootPath, curPath, args, path))
+				int p = getFullPath(rootPath, curPath, args, path);
+				if(p == 1)
 				{
 					
 					if (rmdir(path) == 0)
@@ -746,9 +763,13 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 						sendStringtoClient(connfd, str_permission);
 					}
 				}
-				else
+				else if(p == 0)
 				{
 					sendStringtoClient(connfd, str_permission);
+				}
+				else
+				{
+					sendStringtoClient(connfd, str_noFile);
 				}
 			}
 			else
@@ -762,7 +783,8 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 			{
 				char path[1000];
 				memset(path, 0, 1000);
-				if(getFullPath(rootPath, curPath, args, path))
+				int p = getFullPath(rootPath, curPath, args, path);
+				if(p == 1)
 				{
 					if (access(path, F_OK) == 0)
 					{
@@ -775,9 +797,13 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 						sendStringtoClient(connfd, str_noFile);
 					}
 				}
-				else
+				else if(p == 0)
 				{
 					sendStringtoClient(connfd, str_permission);
+				}
+				else
+				{
+					sendStringtoClient(connfd, str_noFile);
 				}
 			}
 			else
@@ -793,7 +819,7 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 				{
 					char path[1000];
 					memset(path, 0, 1000);
-					if(getFullPath(rootPath, curPath, args, path))
+					if(getFullPath(rootPath, curPath, args, path) != 0)
 					{
 						if (rename(rnfr_path, path) == 0)
 						{
