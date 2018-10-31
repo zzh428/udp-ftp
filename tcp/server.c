@@ -313,9 +313,19 @@ void getFullPath(char * root, char * cwd, char * args, char * result)
 	}
 }
 
-int sendDirList(int fd)
+int sendDirList(int fd, char * args)
 {
-	FILE * f = popen("ls -l", "r");
+	FILE * f = NULL;
+	char shellcmd[200] = "ls -l ";
+	if( *args == 0)
+	{
+		f = popen(shellcmd, "r");
+	}
+	else
+	{
+		strcat(shellcmd,args);
+		f = popen(shellcmd, "r");
+	}
 	if (f == NULL)
 		return 0;
 	char buf[8192];
@@ -666,7 +676,7 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 				if (mode == MODE_PORT)
 				{
 					file_fd = connectUser(client_IP, dataport);
-					if(sendDirList(file_fd))
+					if(sendDirList(file_fd, args))
 						sendStringtoClient(connfd, str_finish);
 					else
 						sendStringtoClient(connfd, str_fileFail);
@@ -675,7 +685,7 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 				else
 				{
 					file_fd = accept(pasv_listenfd, NULL, NULL);
-					if (sendDirList(file_fd))
+					if (sendDirList(file_fd, args))
 						sendStringtoClient(connfd, str_finish);
 					else
 						sendStringtoClient(connfd, str_fileFail);
