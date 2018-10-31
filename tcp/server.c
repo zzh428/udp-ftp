@@ -552,7 +552,7 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 				mode = MODE_PASV;
 				while (1)
 				{
-					dataport = rand() % (65535 - 1 + 20000) + 20000;
+					dataport = rand() % 45536 + 20000;
 					if ((pasv_listenfd = initSocket(dataport)) == -1)
 						continue;
 					break;

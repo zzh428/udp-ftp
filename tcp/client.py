@@ -57,6 +57,7 @@ class Client:
                 print(self.recv)
                 if not self.recv.startswith("200"):
                     self.datasocket.close()
+                    print("Error occurred, close listening socket")
                     self.datasocket = None
 
             elif cmd == "PASV":
@@ -104,7 +105,7 @@ class Client:
 
             elif cmd == "STOR":
                 self.sk.send(bytes(self.cmdLine + "\r\n",encoding="utf-8"))
-                self.recv = str(self.sk.recv(8192),encoding="utf-8")
+                self.recv = str(self.sk.recv(8192),encoding="utf-8")[:-1]
                 print(self.recv)
                 if self.recv.startswith("150"):
                     if self.dataMode:
@@ -112,9 +113,6 @@ class Client:
                         self.datasocket.connect((self.pasv_ip,self.dataport))
                         f = open(re.split(' ',self.cmdLine)[-1],'rb')
                         datarecv = self.datasocket.sendall(f.read())
-                        if not datarecv:
-                            break
-                        f.write(datarecv)
                         f.close()
                         self.datasocket.close()
                         self.datasocket = None
@@ -154,6 +152,9 @@ class Client:
                     print(flist)
                     self.recv = str(self.sk.recv(8192),encoding="utf-8")[:-1]
                     print(self.recv)
+                
+            else:
+                print("Command not supported")
 
 
     def getLocalIP(self):
@@ -171,7 +172,7 @@ class Client:
 
 if __name__ == "__main__":
     if(len(sys.argv) == 3):
-        c = Client(sys.argv[1],sys.argv[2])
+        c = Client(sys.argv[1],int(sys.argv[2]))
     else:
         c = Client("127.0.0.1",21)
 
