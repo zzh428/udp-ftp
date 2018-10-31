@@ -25,7 +25,6 @@ char * str_finish = "226 Transfer complete\r\n";
 char * str_pasv = "227 Entering Passive Mode (";
 char * str_goodbye = "221 Goodbye\r\n";
 char * str_permission = "550 Permission denied\r\n";
-char * str_permission_path = "550 Permission denied, \"..\" in path is invalid\r\n";
 char * str_dirok = "250 Okey\r\n";
 char * str_mkdirFail = "550 Mkdir failed\r\n";
 char * str_rmdirFail = "550 Rmdir failed\r\n";
