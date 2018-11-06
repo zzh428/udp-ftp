@@ -72,6 +72,8 @@ class Client:
                     pasv_address = pasv_address.split(',')
                     self.dataport = int(pasv_address[-1]) + 256 * int(pasv_address[-2])
                     self.pasv_ip = pasv_address[0] + '.' + pasv_address[1] + '.' + pasv_address[2] + '.' + pasv_address[3]
+                    self.datasocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    self.datasocket.connect((self.pasv_ip,self.dataport))
 
             elif cmd == "RETR":
                 self.sk.send(bytes(self.cmdLine + "\r\n",encoding="utf-8"))
@@ -79,8 +81,8 @@ class Client:
                 print(self.recv)
                 if self.recv.startswith("150"):
                     if self.dataMode:
-                        self.datasocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                        self.datasocket.connect((self.pasv_ip,self.dataport))
+                        #self.datasocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        #self.datasocket.connect((self.pasv_ip,self.dataport))
                         f = open(re.split('[/ ]',self.cmdLine)[-1],'wb')
                         while(1):
                             datarecv = self.datasocket.recv(8192)
@@ -109,8 +111,6 @@ class Client:
                 print(self.recv)
                 if self.recv.startswith("150"):
                     if self.dataMode:
-                        self.datasocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                        self.datasocket.connect((self.pasv_ip,self.dataport))
                         f = open(re.split(' ',self.cmdLine)[-1],'rb')
                         datarecv = self.datasocket.sendall(f.read())
                         f.close()
@@ -132,8 +132,8 @@ class Client:
                 if self.recv.startswith("150"):
                     flist = ""
                     if self.dataMode:
-                        self.datasocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                        self.datasocket.connect((self.pasv_ip,self.dataport))
+                        #self.datasocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        #self.datasocket.connect((self.pasv_ip,self.dataport))
                         while(1):
                             datarecv = self.datasocket.recv(8192)
                             if not datarecv:
