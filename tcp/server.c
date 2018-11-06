@@ -194,6 +194,7 @@ int sendFile(int fd, char * args)
 		write(fd, buf, len);
 	}
 	fclose(f);
+	close(fd);
 	return 1;
 }
 
@@ -217,6 +218,7 @@ int recvFile(int fd, char * args)
 		fwrite(buf, sizeof(char), len, f);
 	}
 	fclose(f);
+	close(fd);
 	return 1;
 }
 
@@ -352,6 +354,7 @@ int sendDirList(int fd, char * args)
 		write(fd, buf, len);
 	}
 	pclose(f);
+	close(fd);
 	return 1;
 }
 
@@ -462,7 +465,7 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 						else
 							sendStringtoClient(connfd, str_fileFail);
 					}
-					close(file_fd);
+					
 				}
 				else if(p == 0)
 				{
@@ -513,7 +516,6 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 						else
 							sendStringtoClient(connfd, str_fileFail);
 					}
-					close(file_fd);
 				}
 				else
 				{
@@ -724,7 +726,6 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 						else
 							sendStringtoClient(connfd, str_fileFail);
 					}
-					close(file_fd);
 				}
 				else if(p == 0)
 				{
