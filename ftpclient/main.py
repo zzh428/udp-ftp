@@ -100,7 +100,7 @@ class ClientLogic(QMainWindow):
         self.recv = str(self.sk.recv(8192), encoding="utf-8")[:-1]
         self.printLog(self.recv)
 
-    def port(self, print=True):
+    def port(self, p=True):
         if self.datasocket is not None:
             self.datasocket.close()
         self.dataMode = 0
@@ -119,9 +119,10 @@ class ClientLogic(QMainWindow):
                            str(self.dataport // 256) + ',' + str(self.dataport % 256) + "\r\n",
                            encoding='utf-8'))
         self.recv = str(self.sk.recv(8192), encoding="utf-8")[:-1]
-        if print:
+        if p:
             self.printLog(self.recv)
         if not self.recv.startswith("200"):
+            print(self.recv)
             self.datasocket.close()
             self.printLog("Error occurred, close listening socket")
             self.datasocket = None
@@ -161,6 +162,8 @@ class ClientLogic(QMainWindow):
 
     def retr(self):
         fileName,_ = QInputDialog.getText(self,"请输入文件名","",QLineEdit.Normal,"")
+        if len(fileName) == 0:
+            return
         rest = self.checkRest(fileName)
 
         if self.ui.portButton.isChecked():
@@ -206,10 +209,10 @@ class ClientLogic(QMainWindow):
         appe = 0
         size = 0
         if self.ui.portButton.isChecked():
-            self.port(print=False)
+            self.port()
         else:
-            self.pasv(print=False)
-        self.sk.send(bytes('LIST' + re.split('[/ ]', fileName)[-1] + "\r\n", encoding="utf-8"))
+            self.pasv()
+        self.sk.send(bytes('LIST ' + re.split('[/ ]', fileName)[-1] + "\r\n", encoding="utf-8"))
         self.recv = str(self.sk.recv(8192), encoding="utf-8")[:-1]
         if self.recv.startswith("150"):
             flist = ""
@@ -230,21 +233,27 @@ class ClientLogic(QMainWindow):
                     flist += str(datarecv, encoding='utf-8')
                 s.close()
             flist = flist.splitlines(keepends=False)
+            print(flist)
             for l in flist:
-                if l[-1] == re.split('[/ ]', fileName)[-1] and l[0][0] == '-':
-                    if int(l[4]) < os.path.getsize(fileName):
+                l = l.split()
+                if re.split('[/ ]', l[-1])[-1] == re.split('[/ ]', fileName)[-1] and l[0][0] == '-':
+                    if int(l[4]) < os.path.getsize(fileName) and int(l[4]) > 0:
                         reply = QMessageBox.question(self, ' ', re.split('[/ ]', fileName)[-1] + '已存在,是否断点续传?',
                                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
                         if reply == QMessageBox.Yes:
                             appe = 1
                             size = int(l[4])
                         break
+            self.recv = str(self.sk.recv(8192), encoding="utf-8")[:-1]
+            self.printLog(self.recv)
         return appe, size
 
     def stor(self):
         fileName, _ = QFileDialog.getOpenFileName(self, "选择上传文件", os.getcwd(), "All Files(*)")
+        if len(fileName) == 0:
+            return
         appe, appeSize = self.checkAppe(fileName)
-
+        self.printLog(str(appe) + ' '+ str(appeSize))
         if self.ui.portButton.isChecked():
             self.port()
         else:
@@ -259,7 +268,7 @@ class ClientLogic(QMainWindow):
             if self.ui.pasvButton.isChecked():
                 f = open(fileName, 'rb')
                 if appe:
-                    f.seek(appeSize,0)
+                    f.seek(appeSize-1,0)
                 self.datasocket.sendall(f.read())
                 f.close()
                 self.datasocket.close()
@@ -268,7 +277,7 @@ class ClientLogic(QMainWindow):
                 s, _ = self.datasocket.accept()
                 f = open(fileName, 'rb')
                 if appe:
-                    f.seek(appeSize,0)
+                    f.seek(appeSize-1,0)
                 s.sendall(f.read())
                 f.close()
                 s.close()
@@ -331,12 +340,16 @@ class ClientLogic(QMainWindow):
 
     def mkd(self):
         dirName, _ = QInputDialog.getText(self, "请输入目录名", "", QLineEdit.Normal, "")
+        if len(dirName) == 0:
+            return
         self.sk.send(bytes('MKD ' + dirName + '\r\n', encoding="utf-8"))
         self.recv = str(self.sk.recv(8192), encoding="utf-8")[:-1]
         self.printLog(self.recv)
 
     def cwd(self):
         dirName, _ = QInputDialog.getText(self, "请输入目录名", "", QLineEdit.Normal, "")
+        if len(dirName) == 0:
+            return
         self.sk.send(bytes('CWD ' + dirName + '\r\n', encoding="utf-8"))
         self.recv = str(self.sk.recv(8192), encoding="utf-8")[:-1]
         self.printLog(self.recv)
@@ -348,17 +361,23 @@ class ClientLogic(QMainWindow):
 
     def rmd(self):
         dirName, _ = QInputDialog.getText(self, "请输入目录名", "", QLineEdit.Normal, "")
+        if len(dirName) == 0:
+            return
         self.sk.send(bytes('RMD ' + dirName + '\r\n', encoding="utf-8"))
         self.recv = str(self.sk.recv(8192), encoding="utf-8")[:-1]
         self.printLog(self.recv)
 
     def mv(self):
-        dirNameOld, _ = QInputDialog.getText(self, "请输入旧文件名", "", QLineEdit.Normal, "")
+        dirNameOld,_ = QInputDialog.getText(self, "请输入旧文件名", "", QLineEdit.Normal, "")
+        if len(dirNameOld) == 0:
+            return
         self.sk.send(bytes('RNFR ' + dirNameOld + '\r\n', encoding="utf-8"))
         self.recv = str(self.sk.recv(8192), encoding="utf-8")[:-1]
         self.printLog(self.recv)
         if self.recv.startswith('350'):
             dirNameNew, _ = QInputDialog.getText(self, "请输入新文件名", "", QLineEdit.Normal, "")
+            if len(dirNameNew) == 0:
+                return
             self.sk.send(bytes('RNTO ' + dirNameNew + '\r\n', encoding="utf-8"))
             self.recv = str(self.sk.recv(8192), encoding="utf-8")[:-1]
             self.printLog(self.recv)
@@ -381,7 +400,3 @@ if __name__ == "__main__":
 
     c = ClientLogic(ui)
     sys.exit(app.exec_())
-    #if (len(sys.argv) == 3):
-    #    c = Client(sys.argv[1], int(sys.argv[2]))
-    #else:
-    #    c = Client("127.0.0.1", 21)

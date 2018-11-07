@@ -185,13 +185,22 @@ int sendFile(int fd, char * args, int rest)
 {
 	FILE* f = fopen(args, "rb");
 	if (f == NULL)
+	{
+		close(fd);
 		return 0;
+	}
 	if(rest)
 	{
-		if(!fseek(f,(long)rest,SEEK_SET))
+		if(fseek(f,rest-1,SEEK_SET))
+		{
+			close(fd);
 			return 0;
+		}
 		if(feof(f))
+		{
+			close(fd);
 			return 0;
+		}
 	}
 	char buf[8192];
 	int len = 0;
@@ -217,9 +226,15 @@ int recvFile(int fd, char * args, char * cmd)
 		f = fopen(args, "ab");
 	}
 	else
+	{
+		close(fd);
 		return 0;
+	}
 	if (f == NULL)
+	{
+		close(fd);
 		return 0;
+	}
 	char buf[8192];
 	int len = 0;
 	while(1)
@@ -452,8 +467,15 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 		}
 		else if(!strcmp(cmd,"REST"))
 		{
-			rest = atoi(args);
-			sendStringtoClient(connfd, str_rest);
+			if(status >= STATUS_NOPORT)
+			{
+				rest = atoi(args);
+				sendStringtoClient(connfd, str_rest);
+			}
+			else
+			{
+				sendStringtoClient(connfd,str_permission);
+			}
 		}
 		else if(!strcmp(cmd,"RETR"))
 		{
