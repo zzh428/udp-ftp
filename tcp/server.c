@@ -205,13 +205,14 @@ int sendFile(int fd, char * args, int rest)
 
 int recvFile(int fd, char * args, char * cmd)
 {
+	FILE * f = NULL;
 	if(!strcmp(cmd, "STOR"))
 	{
-		FILE* f = fopen(args, "wb");
+		f = fopen(args, "wb");
 	}
 	else if(!strcmp(cmd, "APPE"))
 	{
-		FILE* f = fopen(args, "ab");
+		f = fopen(args, "ab");
 	}
 	else
 		return 0;
