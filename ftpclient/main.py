@@ -232,12 +232,13 @@ class ClientLogic(QMainWindow):
             flist = flist.splitlines(keepends=False)
             for l in flist:
                 if l[-1] == re.split('[/ ]', fileName)[-1] and l[0][0] == '-':
-                    reply = QMessageBox.question(self, ' ', re.split('[/ ]', fileName)[-1] + '已存在,是否断点续传?',
-                                                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-                    if reply == QMessageBox.Yes:
-                        appe = 1
-                        size = int(l[4])
-                    break
+                    if int(l[4]) < os.path.getsize(fileName):
+                        reply = QMessageBox.question(self, ' ', re.split('[/ ]', fileName)[-1] + '已存在,是否断点续传?',
+                                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                        if reply == QMessageBox.Yes:
+                            appe = 1
+                            size = int(l[4])
+                        break
         return appe, size
 
     def stor(self):

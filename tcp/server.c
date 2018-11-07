@@ -190,6 +190,8 @@ int sendFile(int fd, char * args, int rest)
 	{
 		if(!fseek(f,(long)rest,SEEK_SET))
 			return 0;
+		if(feof(f))
+			return 0;
 	}
 	char buf[8192];
 	int len = 0;
