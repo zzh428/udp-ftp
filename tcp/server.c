@@ -35,7 +35,7 @@ int handleArgs(int * port, char * path, int argc, char **argv)
 			if(!strcmp(argv[1],"-port") && !strcmp(argv[3],"-root"))
 			{
 				int temp = atoi(argv[2]);
-				if (temp >0 && temp < 65536)
+				if (temp > 0 && temp < 65536)
 				{
 					*port = temp;
 					strcpy(path,argv[4]);
@@ -181,11 +181,16 @@ int connectUser(char * ip, int port)
 	return connfd;
 }
 
-int sendFile(int fd, char * args)
+int sendFile(int fd, char * args, int rest)
 {
 	FILE* f = fopen(args, "rb");
 	if (f == NULL)
 		return 0;
+	if(rest)
+	{
+		if(!fseek(f,(long)rest,SEEK_SET))
+			return 0;
+	}
 	char buf[8192];
 	int len = 0;
 	while (!feof(f))
@@ -198,9 +203,18 @@ int sendFile(int fd, char * args)
 	return 1;
 }
 
-int recvFile(int fd, char * args)
+int recvFile(int fd, char * args, char * cmd)
 {
-	FILE* f = fopen(args, "wb");
+	if(!strcmp(cmd, "STOR"))
+	{
+		FILE* f = fopen(args, "wb");
+	}
+	else if(!strcmp(cmd, "APPE"))
+	{
+		FILE* f = fopen(args, "ab");
+	}
+	else
+		return 0;
 	if (f == NULL)
 		return 0;
 	char buf[8192];
@@ -382,6 +396,7 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 	int pasv_listenfd = 0;
 	int rnfr_status = 0;
 	char rnfr_path[1000];
+	int rest = 0;
 	while(1)
 	{
 		char str[8192];
@@ -432,6 +447,11 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 				sendStringtoClient(connfd, str_login);
 			}	
 		}
+		else if(!strcmp(cmd,"REST"))
+		{
+			rest = atoi(args);
+			sendStringtoClient(connfd, str_rest);
+		}
 		else if(!strcmp(cmd,"RETR"))
 		{
 			int file_fd = 0;
@@ -451,7 +471,7 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 					if (mode == MODE_PORT)
 					{
 						file_fd = connectUser(client_IP, dataport);
-						if(sendFile(file_fd, path))
+						if(sendFile(file_fd, path, rest))
 							sendStringtoClient(connfd, str_finish);
 						else
 							sendStringtoClient(connfd, str_fileFail);
@@ -460,7 +480,7 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 					else
 					{
 						file_fd = accept(pasv_listenfd, NULL, NULL);
-						if (sendFile(file_fd, path))
+						if (sendFile(file_fd, path, rest))
 							sendStringtoClient(connfd, str_finish);
 						else
 							sendStringtoClient(connfd, str_fileFail);
@@ -483,9 +503,10 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 			else
 			{
 				sendStringtoClient(connfd,str_permission);
-			}	
+			}
+			rest = 0;	
 		}
-		else if(!strcmp(cmd,"STOR"))
+		else if(!strcmp(cmd,"STOR") || !strcmp(cmd,"APPE"))
 		{
 			int file_fd = 0;
 			char path[1000];
@@ -503,7 +524,7 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 					if (mode == MODE_PORT)
 					{
 						file_fd = connectUser(client_IP, dataport);
-						if (recvFile(file_fd, path))
+						if (recvFile(file_fd, path, cmd))
 							sendStringtoClient(connfd, str_finish);
 						else
 							sendStringtoClient(connfd, str_fileFail);
@@ -511,7 +532,7 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 					else
 					{
 						file_fd = accept(pasv_listenfd, NULL, NULL);
-						if (recvFile(file_fd, path))
+						if (recvFile(file_fd, path, cmd))
 							sendStringtoClient(connfd, str_finish);
 						else
 							sendStringtoClient(connfd, str_fileFail);

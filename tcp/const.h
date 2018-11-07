@@ -33,5 +33,6 @@ char * str_renameFail = "550 Rename failed\r\n";
 char * str_noconnection = "425 No connection\r\n";
 char * str_nocmd = "502 No such command\r\n";
 char * str_nornfr = "503 No RNFR command\r\n";
+char * str_rest = "350 REST Okey\r\n";
 
 #endif
