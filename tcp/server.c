@@ -185,7 +185,7 @@ void * sendFile(void * a)
 {
 	retr_args * temp = (retr_args *) a;
 	int connfd = temp->connfd;
-	int fd = temp->fd
+	int fd = temp->fd;
 	char * args = temp->args;
 	int rest = temp->rest;
 	FILE* f = fopen(args, "rb");
@@ -233,7 +233,7 @@ void * recvFile(void * a)
 	int connfd = temp->connfd;
 	int fd = temp->fd;
 	char * args = temp->args;
-	char * cmd = temp->cmd
+	char * cmd = temp->cmd;
 	FILE * f = NULL;
 	if(!strcmp(cmd, "STOR"))
 	{
@@ -441,7 +441,7 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 	int rnfr_status = 0;
 	char rnfr_path[1000];
 	int rest = 0;
-	pthread_t fthread = NULL;
+	pthread_t fthread = 0;
 	while(1)
 	{
 		char str[8192];
@@ -526,13 +526,13 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 					strcat(message, "\r\n");
 					sendStringtoClient(connfd, message);
 					retr_args temp;
-					temp->connfd = connfd;
-					temp->args = args;
-					temp->rest = rest;
+					temp.connfd = connfd;
+					temp.args = args;
+					temp.rest = rest;
 					if (mode == MODE_PORT)
 					{
 						file_fd = connectUser(client_IP, dataport);
-						temp->fd = file_fd;
+						temp.fd = file_fd;
 						transferState = 1;
 						pthread_create(&fthread, 0, sendFile, (void *)&temp);
 						pthread_detach(fthread);
@@ -540,7 +540,7 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 					else
 					{
 						file_fd = accept(pasv_listenfd, NULL, NULL);
-						temp->fd = file_fd;
+						temp.fd = file_fd;
 						transferState = 1;
 						pthread_create(&fthread, 0, sendFile, (void *)&temp);
 						pthread_detach(fthread);
@@ -582,13 +582,13 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 					strcat(message, "\r\n");
 					sendStringtoClient(connfd, message);
 					stor_args temp;
-					temp->connfd = connfd;
-					temp->args = args;
-					temp->cmd = cmd;
+					temp.connfd = connfd;
+					temp.args = args;
+					temp.cmd = cmd;
 					if (mode == MODE_PORT)
 					{
 						file_fd = connectUser(client_IP, dataport);
-						temp->fd = file_fd;
+						temp.fd = file_fd;
 						transferState = 1;
 						pthread_create(&fthread, 0, recvFile, (void *)&temp);
 						pthread_detach(fthread);
@@ -596,7 +596,7 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 					else
 					{
 						file_fd = accept(pasv_listenfd, NULL, NULL);
-						temp->fd = file_fd;
+						temp.fd = file_fd;
 						transferState = 1;
 						pthread_create(&fthread, 0, recvFile, (void *)&temp);
 						pthread_detach(fthread);
@@ -624,7 +624,8 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 			}
 			if(!strcmp(cmd,"ABOR") && transferState)
 			{
-				pthread_kill(fthread,0);
+				pthread_cancel(fthread);
+				pthread_join(fthread, NULL);
 			}
 			sendStringtoClient(connfd, str_goodbye);
 			return 0;

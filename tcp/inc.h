@@ -23,19 +23,19 @@
 #include <pthread.h>
 
 int transferState = 0;
-struct retr_args
+typedef struct
 {
 	int connfd;
 	int fd;
 	char * args;
 	int rest;
-};
-struct stor_args
+} retr_args;
+typedef struct
 {
 	int connfd;
 	int fd;
 	char * args;
 	char * cmd;
-};
+} stor_args;
 
 #endif
