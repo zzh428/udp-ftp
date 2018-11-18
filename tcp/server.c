@@ -181,25 +181,36 @@ int connectUser(char * ip, int port)
 	return connfd;
 }
 
-int sendFile(int fd, char * args, int rest)
+void * sendFile(void * a)
 {
+	retr_args * temp = (retr_args *) a;
+	int connfd = temp->connfd;
+	int fd = temp->fd
+	char * args = temp->args;
+	int rest = temp->rest;
 	FILE* f = fopen(args, "rb");
 	if (f == NULL)
 	{
 		close(fd);
-		return 0;
+		sendStringtoClient(connfd, str_fileFail);
+		transferState = 0;
+		pthread_exit(0);
 	}
 	if(rest)
 	{
 		if(fseek(f,rest-1,SEEK_SET))
 		{
 			close(fd);
-			return 0;
+			sendStringtoClient(connfd, str_fileFail);
+			transferState = 0;
+			pthread_exit(0);
 		}
 		if(feof(f))
 		{
 			close(fd);
-			return 0;
+			sendStringtoClient(connfd, str_fileFail);
+			transferState = 0;
+			pthread_exit(0);
 		}
 	}
 	char buf[8192];
@@ -211,11 +222,18 @@ int sendFile(int fd, char * args, int rest)
 	}
 	fclose(f);
 	close(fd);
-	return 1;
+	sendStringtoClient(connfd, str_finish);
+	transferState = 0;
+	pthread_exit(0);
 }
 
-int recvFile(int fd, char * args, char * cmd)
+void * recvFile(void * a)
 {
+	stor_args * temp = (stor_args *) a;
+	int connfd = temp->connfd;
+	int fd = temp->fd;
+	char * args = temp->args;
+	char * cmd = temp->cmd
 	FILE * f = NULL;
 	if(!strcmp(cmd, "STOR"))
 	{
@@ -228,12 +246,16 @@ int recvFile(int fd, char * args, char * cmd)
 	else
 	{
 		close(fd);
-		return 0;
+		sendStringtoClient(connfd, str_fileFail);
+		transferState = 0;
+		pthread_exit(0);
 	}
 	if (f == NULL)
 	{
 		close(fd);
-		return 0;
+		sendStringtoClient(connfd, str_fileFail);
+		transferState = 0;
+		pthread_exit(0);
 	}
 	char buf[8192];
 	int len = 0;
@@ -245,13 +267,17 @@ int recvFile(int fd, char * args, char * cmd)
 		else if (len < 0)
 		{
 			fclose(f);
-			return 0;
+			sendStringtoClient(connfd, str_fileFail);
+			transferState = 0;
+			pthread_exit(0);
 		}
 		fwrite(buf, sizeof(char), len, f);
 	}
 	fclose(f);
 	close(fd);
-	return 1;
+	sendStringtoClient(connfd, str_finish);
+	transferState = 0;
+	pthread_exit(0);
 }
 
 int parseIP(char * args, char * IP, int * port)
@@ -415,6 +441,7 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 	int rnfr_status = 0;
 	char rnfr_path[1000];
 	int rest = 0;
+	pthread_t fthread = NULL;
 	while(1)
 	{
 		char str[8192];
@@ -425,6 +452,11 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 		memset(cmd,0,10);
 		memset(args,0,8192);
 		parseCmd(str,cmd,args);
+		if(transferState && (strcmp(cmd,"QUIT") && strcmp(cmd, "ABOR") && strcmp(cmd, "SYST") && strcmp(cmd, "PWD")))
+		{
+			sendStringtoClient(connfd,str_permission);
+			continue;
+		}
 		if(!strcmp(cmd,"USER"))
 		{
 			if(status == STATUS_NOUSERNAME || status == STATUS_NOPASSWORD)
@@ -493,22 +525,25 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 					strcat(message, args);
 					strcat(message, "\r\n");
 					sendStringtoClient(connfd, message);
+					retr_args temp;
+					temp->connfd = connfd;
+					temp->args = args;
+					temp->rest = rest;
 					if (mode == MODE_PORT)
 					{
 						file_fd = connectUser(client_IP, dataport);
-						if(sendFile(file_fd, path, rest))
-							sendStringtoClient(connfd, str_finish);
-						else
-							sendStringtoClient(connfd, str_fileFail);
-
+						temp->fd = file_fd;
+						transferState = 1;
+						pthread_create(&fthread, 0, sendFile, (void *)&temp);
+						pthread_detach(fthread);
 					}
 					else
 					{
 						file_fd = accept(pasv_listenfd, NULL, NULL);
-						if (sendFile(file_fd, path, rest))
-							sendStringtoClient(connfd, str_finish);
-						else
-							sendStringtoClient(connfd, str_fileFail);
+						temp->fd = file_fd;
+						transferState = 1;
+						pthread_create(&fthread, 0, sendFile, (void *)&temp);
+						pthread_detach(fthread);
 					}
 					
 				}
@@ -546,21 +581,25 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 					strcat(message, args);
 					strcat(message, "\r\n");
 					sendStringtoClient(connfd, message);
+					stor_args temp;
+					temp->connfd = connfd;
+					temp->args = args;
+					temp->cmd = cmd;
 					if (mode == MODE_PORT)
 					{
 						file_fd = connectUser(client_IP, dataport);
-						if (recvFile(file_fd, path, cmd))
-							sendStringtoClient(connfd, str_finish);
-						else
-							sendStringtoClient(connfd, str_fileFail);
+						temp->fd = file_fd;
+						transferState = 1;
+						pthread_create(&fthread, 0, recvFile, (void *)&temp);
+						pthread_detach(fthread);
 					}
 					else
 					{
 						file_fd = accept(pasv_listenfd, NULL, NULL);
-						if (recvFile(file_fd, path, cmd))
-							sendStringtoClient(connfd, str_finish);
-						else
-							sendStringtoClient(connfd, str_fileFail);
+						temp->fd = file_fd;
+						transferState = 1;
+						pthread_create(&fthread, 0, recvFile, (void *)&temp);
+						pthread_detach(fthread);
 					}
 				}
 				else
@@ -579,6 +618,14 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 		}
 		else if(!strcmp(cmd,"QUIT") || !strcmp(cmd,"ABOR"))
 		{
+			if(!strcmp(cmd,"QUIT") && transferState)
+			{
+				pthread_join(fthread, NULL);
+			}
+			if(!strcmp(cmd,"ABOR") && transferState)
+			{
+				pthread_kill(fthread,0);
+			}
 			sendStringtoClient(connfd, str_goodbye);
 			return 0;
 		}

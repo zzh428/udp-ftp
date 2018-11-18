@@ -20,5 +20,22 @@
 #include <dirent.h>
 #include <ifaddrs.h>
 #include <regex.h>
+#include <pthread.h>
+
+int transferState = 0;
+struct retr_args
+{
+	int connfd;
+	int fd;
+	char * args;
+	int rest;
+};
+struct stor_args
+{
+	int connfd;
+	int fd;
+	char * args;
+	char * cmd;
+};
 
 #endif
