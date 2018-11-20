@@ -884,7 +884,7 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 					if (access(path, F_OK) == 0)
 					{
 						strcpy(rnfr_path, path);
-						sendStringtoClient(connfd, str_dirok);
+						sendStringtoClient(connfd, str_rnfr);
 						rnfr_status = 1;
 					}
 					else

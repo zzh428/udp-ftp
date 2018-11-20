@@ -233,7 +233,6 @@ class ClientLogic(QMainWindow):
                     flist += str(datarecv, encoding='utf-8')
                 s.close()
             flist = flist.splitlines(keepends=False)
-            print(flist)
             for l in flist:
                 l = l.split()
                 if re.split('[/ ]', l[-1])[-1] == re.split('[/ ]', fileName)[-1] and l[0][0] == '-':
@@ -253,7 +252,6 @@ class ClientLogic(QMainWindow):
         if len(fileName) == 0:
             return
         appe, appeSize = self.checkAppe(fileName)
-        self.printLog(str(appe) + ' '+ str(appeSize))
         if self.ui.portButton.isChecked():
             self.port()
         else:
@@ -345,8 +343,6 @@ class ClientLogic(QMainWindow):
         self.sk.send(bytes('MKD ' + dirName + '\r\n', encoding="utf-8"))
         self.recv = str(self.sk.recv(8192), encoding="utf-8")[:-1]
         self.printLog(self.recv)
-        if self.recv.startswith("250") or self.recv.startswith("257"):
-            message = QMessageBox.information(self, ' ', '创建目录成功！', QMessageBox.Ok)
 
     def cwd(self):
         dirName, _ = QInputDialog.getText(self, "请输入目录名", "", QLineEdit.Normal, "")
@@ -355,15 +351,11 @@ class ClientLogic(QMainWindow):
         self.sk.send(bytes('CWD ' + dirName + '\r\n', encoding="utf-8"))
         self.recv = str(self.sk.recv(8192), encoding="utf-8")[:-1]
         self.printLog(self.recv)
-        if self.recv.startswith("250") or self.recv.startswith("257"):
-            message = QMessageBox.information(self, ' ', '切换目录成功！', QMessageBox.Ok)
 
     def pwd(self):
         self.sk.send(bytes('PWD' + '\r\n', encoding="utf-8"))
         self.recv = str(self.sk.recv(8192), encoding="utf-8")[:-1]
         self.printLog(self.recv)
-        if self.recv.startswith("257"):
-            message = QMessageBox.information(self, '当前目录', self.recv.split()[-1], QMessageBox.Ok)
 
     def rmd(self):
         dirName, _ = QInputDialog.getText(self, "请输入目录名", "", QLineEdit.Normal, "")
@@ -372,8 +364,6 @@ class ClientLogic(QMainWindow):
         self.sk.send(bytes('RMD ' + dirName + '\r\n', encoding="utf-8"))
         self.recv = str(self.sk.recv(8192), encoding="utf-8")[:-1]
         self.printLog(self.recv)
-        if self.recv.startswith("250"):
-            message = QMessageBox.information(self, ' ', '删除目录成功！', QMessageBox.Ok)
 
     def mv(self):
         dirNameOld,_ = QInputDialog.getText(self, "请输入旧文件名", "", QLineEdit.Normal, "")
@@ -389,8 +379,6 @@ class ClientLogic(QMainWindow):
             self.sk.send(bytes('RNTO ' + dirNameNew + '\r\n', encoding="utf-8"))
             self.recv = str(self.sk.recv(8192), encoding="utf-8")[:-1]
             self.printLog(self.recv)
-            if self.recv.startswith("250"):
-                message = QMessageBox.information(self, ' ', '重命名成功！', QMessageBox.Ok)
 
     def quit(self):
         self.sk.send(bytes('QUIT' + '\r\n', encoding="utf-8"))
@@ -399,8 +387,6 @@ class ClientLogic(QMainWindow):
         self.sk.close()
         if self.datasocket is not None:
             self.datasocket.close()
-        self.ui.fileTable.clear()
-        self.ui.fileTable.setRowCount(0)
 
 
 if __name__ == "__main__":
