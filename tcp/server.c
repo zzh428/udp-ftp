@@ -618,14 +618,9 @@ int startClientSession(char *localIP, int connfd, char * rootPath)
 		}
 		else if(!strcmp(cmd,"QUIT") || !strcmp(cmd,"ABOR"))
 		{
-			if(!strcmp(cmd,"QUIT") && transferState)
+			while(!strcmp(cmd,"QUIT") && transferState)
 			{
-				pthread_join(fthread, NULL);
-			}
-			if(!strcmp(cmd,"ABOR") && transferState)
-			{
-				pthread_cancel(fthread);
-				pthread_join(fthread, NULL);
+				usleep(100000);
 			}
 			sendStringtoClient(connfd, str_goodbye);
 			return 0;
